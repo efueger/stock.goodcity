@@ -167,6 +167,83 @@ jobs:
           command: echo STAGE=$STAGE
       - run: bundle exec cap $STAGE deploy:upload
 
+  ember_cordova_build:
+    <<: *defaults
+    environment:
+        EMBER_CLI_CORDOVA: "1"
+    steps:
+      - restore-cache: *restore-repo-cache
+      - restore-cache: *restore-yarn-cache
+      - restore-cache: *restore-bower-cache
+      - run:
+          name: Setup Environment variables
+          command: |
+            echo 'export APP_SHA=$(echo $CIRCLE_SHA1 | cut -c1-7)' >> $BASH_ENV
+            echo 'export APP_VERSION=$(jq -r ".version" package.json)' >> $BASH_ENV
+      - run:
+          name: Print Environment variables
+          command: |
+              echo EMBER_CLI_CORDOVA=$EMBER_CLI_CORDOVA
+              echo APP_SHA=$APP_SHA
+              echo staging=$staging
+              echo 'export APP_VERSION=$(jq -r ".version" package.json)' >> $BASH_ENV
+      - run: yarn run ember build --environment=production
+      - run: mv dist/ cordova/www
+      - persist_to_workspace:
+          root: .
+          paths:
+            - cordova/www
+
+  android_build:
+    <<: *defaults
+
+    docker:
+      - image: circleci/android:api-28-node8-alpha
+    steps:
+      - restore-cache: *restore-repo-cache
+      - restore-cache: *restore-yarn-cache
+      - attach_workspace:
+          at: ~/stock.goodcity
+      - run:
+          name: Setup Environment variables
+          command: |
+            echo 'export APP_NAME=$(if [ "$CIRCLE_BRANCH" == "live" ]; then echo Stock GoodCity; else echo S. Stock GoodCity; fi)' >> $BASH_ENV
+            echo 'export APP_ID=$(if [ "$CIRCLE_BRANCH" == "live" ]; then echo hk.goodcity.admin; else echo hk.goodcity.adminstaging; fi)' >> $BASH_ENV
+            echo 'export APP_VERSION=$(jq -r ".version" package.json)' >> $BASH_ENV
+            echo 'export ENVIRONMENT=$(if [ "$CIRCLE_BRANCH" == "live" ]; then echo production; else echo staging; fi)' >> $BASH_ENV
+            echo 'export PATH=$PATH:`yarn bin`' >> $BASH_ENV
+            echo 'export BUILD=$(if [ "$CIRCLE_BRANCH" == "live" ]; then echo --release; else echo --debug; fi)' >> $BASH_ENV
+            echo 'export PATH=$PATH:$ANDROID_HOME/tools/gradle/bin' >> $BASH_ENV
+      - run:
+          name: Print Environment variables
+          command: |
+            echo APP_NAME=$APP_NAME
+            echo APP_ID=$APP_ID
+            echo APP_VERSION=$APP_VERSION
+            echo ENVIRONMENT=$ENVIRONMENT
+            echo PATH=$PATH
+            echo BUILD=$BUILD
+
+      - run:
+          name: Install Gradle 3.3
+          command: |
+            wget -O /tmp/gradle.zip https://downloads.gradle.org/distributions/gradle-3.3-bin.zip
+            unzip -d $ANDROID_HOME/tools /tmp/gradle.zip
+            mv $ANDROID_HOME/tools/gradle-3.3 $ANDROID_HOME/tools/gradle
+
+      - run:
+          name: Apply App settings
+          command: cordova-update-config --appname ${APP_NAME} --appid ${APP_ID} --appversion ${APP_VERSION}
+          working_directory: cordova
+
+  android_deploy:
+    <<: *defaults
+    docker:
+      - image: circleci/ruby:2.5.1-node
+    steps:
+      - restore-cache: *restore-repo-cache
+      - run: bundle exec fastlane android staging
+
 workflows:
     version: 2
     build_and_bundle:
@@ -186,8 +263,14 @@ workflows:
         - www_build:
             requires:
               - upload-coverage
-              # - package_dependencies
         - www-deploy:
             requires:
               - www_build
+        - ember_cordova_build:
+            requires:
+              - package_dependencies
+              # - www-deploy
+        - android_build:
+            requires:
+              - ember_cordova_build
 
