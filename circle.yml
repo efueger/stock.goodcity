@@ -11,6 +11,8 @@ machine:
     PILOT_WAIT_PROCESSING_INTERVAL: 60
     ANDROID_HOME: "${HOME}/android-sdk"
     PATH: "${PATH}:${HOME}/${CIRCLE_PROJECT_REPONAME}/node_modules/.bin:$HOME/.yarn/bin:${ANDROID_HOME}/tools"
+    CC_TEST_REPORTER_ID: 4f3d35c7370650abe126ce89bb15dbb3fe86044cec7d273cef3d026c0d44996b
+
 dependencies:
   cache_directories:
     - ~/.yarn
